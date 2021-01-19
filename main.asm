@@ -54,15 +54,17 @@ main endp
 
 gameloop proc near
 
-	call paintplayer1
-	call paintplayer2
-	call paintenemies
+	mov		al, 01h								; player color
+	call 	paintplayer1
+	mov		al, 02h								; player color
+	call 	paintplayer2
+	call 	paintenemies
 
 	mov		ah,01h
 mainloop:
 	int		16h									; ZF = 0 if char avaiable
 
-	call paintenemies
+	call 	paintenemies
 
 	jz		mainloop							; is a char avaiable in the keyboard buffer?
 	mov		ah,00h								; clears the buffer and flag
@@ -90,44 +92,75 @@ mainloop:
 	je		exit
 
 	jmp		mainloop
-
 p1up:
+	call	removeplayer1color
 	dec		p1ypos
 	jmp		paintp1
 p1lf:
+	call	removeplayer1color
 	dec		p1xpos
 	jmp		paintp1
 p1dw:
+	call	removeplayer1color
 	inc		p1ypos
 	jmp		paintp1
 p1rt:
+	call	removeplayer1color
 	inc		p1xpos
 	jmp		paintp1
 paintp1:
+	mov		al, 01h								; player color
 	call 	paintplayer1
-
 	jmp 	mainloop
-p2up:
-p2lf:
-p2dw:
-p2rt:
-paintp2:
-	call 	paintplayer2
-
-	jmp		mainloop
 exit:
+	ret
+p2up:
+	call	removeplayer2color
+	dec		p2ypos
+	jmp		paintp2
+p2lf:
+	call	removeplayer2color
+	dec		p2xpos
+	jmp		paintp2
+p2dw:
+	call	removeplayer2color
+	inc		p2ypos
+	jmp		paintp2
+p2rt:
+	call	removeplayer2color
+	inc		p2xpos
+	jmp		paintp2
+paintp2:
+	mov		al, 02h								; player color
+	call 	paintplayer2
+	jmp 	mainloop
+
 	ret
 gameloop endp
 
 
-paintplayer1 proc near
+removeplayer1color proc near
 	push	ax
+	mov		al, 00								; paint black
+	call 	paintplayer1
+	pop		ax
+	ret
+removeplayer1color endp
+
+removeplayer2color proc near
+	push	ax
+	mov		al, 00								; paint black
+	call 	paintplayer2
+	pop		ax
+	ret
+removeplayer2color endp
+
+paintplayer1 proc near
 	push	bx
 	push	cx
 	push	dx
 
 	mov		ah, 0ch
-	mov		al, 01h
 	mov		cx, p1xpos							; horizontal pos
 	mov		dx, p1ypos							; vert pos
 
@@ -136,19 +169,16 @@ paintplayer1 proc near
 	pop		dx
 	pop		cx
 	pop		bx
-	pop		ax
 
 	ret
 paintplayer1 endp
 
 paintplayer2 proc near
-	push	ax
 	push	bx
 	push	cx
 	push	dx
 
 	mov		ah, 0ch
-	mov		al, 04h
 	mov		cx, p2xpos							; horizontal pos
 	mov		dx, p2ypos							; vert pos
 
@@ -157,7 +187,6 @@ paintplayer2 proc near
 	pop		dx
 	pop		cx
 	pop		bx
-	pop		ax
 
 	ret
 paintplayer2 endp
