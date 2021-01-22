@@ -1,10 +1,10 @@
-setupscreen macro								; setup video mode
+setupscreen macro							; setup video mode
 	xor		ah, ah								; graph mode ah:=0
 	mov		al, 04h								; 320x200 color mode
 	int		10h
 ; hide cursor
 	mov		ch, 32								; sets the cursor size
-	mov		ah, 1								; cursor size service
+	mov		ah, 1									; cursor size service
 	int		10h
 ; palete de cores
 	mov		ax, 0bh								; color palette for display mode
@@ -13,23 +13,46 @@ setupscreen macro								; setup video mode
 	int		10h
 endm
 
-normalscreen macro								; sets the normal video mode
+normalscreen macro						; sets the normal video mode
 	xor		ah, ah
-	mov		al, 02h								; normal video mode (text)
+	mov		al, 03h								; normal video mode (text)
 	int		10h
 endm
 
-setupenemiescords MACRO
-	call 
-ENDM
+paintscoreline macro
+	mov 	cx, 200
+	mov		dx, 200
+paintlineloop:
+	mov		al, 01h
+	mov		ah, 0ch
+	int		10h
+	dec		dx
+	cmp		dx, 0
+	jnz		paintlineloop
+endm
+
+setupenemiescords macro
+	mov		cx, 4
+	lea		bx, enemyshipxpos
+loopcoords:
+	push	bx
+	call 	random
+	mov		ax, seed
+	mov		bx, 180
+	xor		dx, dx
+	div		bx
+	pop		bx
+	mov		[bx], dx
+	inc		bx
+	loop loopcoords
+endm
 
 stack segment para stack
 	db 64 dup ('mystack')
 stack ends
 
 data segment para 'data'
-	;data
-	seed 			DW 	3749h
+	seed 			dw 	9371h
 	p1xpos		dw	50							; p1 x pos
 	p1ypos		dw	150							; p1 y pos
 	p2xpos		dw	150							; p2 x pos
@@ -50,17 +73,18 @@ code segment para 'code'
 main proc far
 	assume cs:code,ds:data,es:data,ss:stack
 	push	ds
-	sub 	ax,ax
+	xor		ax, ax
 	push	ax
 	mov 	ax,data
 	mov 	ds,ax
 	mov 	es,ax
 
-	setupscreen									; macro to setup the video mode
-
+	setupscreen										; macro to setup the video mode
+	paintscoreline
+	setupenemiescords							; macro for setting up enemies coords
 	call	gameloop								; main game loop
 
-	normalscreen								; macro to setup normal text mode
+	normalscreen									; macro to setup normal text mode
 
 	ret
 
@@ -68,40 +92,41 @@ main endp
 
 gameloop proc near
 
-	mov		al, 01h								; player color
+	mov		al, 01h									; player color
 	call	paintplayer1
-	mov		al, 02h								; player color
+	mov		al, 02h									; player color
 	call	paintplayer2
 	call 	paintenemies
 
-mainloop:											; ################## MAIN LOOP ##################
+mainloop:												; ################## MAIN LOOP ##################
 
 	call 	delay
 	call	paintenemies
 	call 	readchar
 
 	cmp		al,"w"
-	je		p1up									; player 1 up
+	je		p1up										; player 1 up
 	cmp		al,"a"
-	je		p1lf									; player 1 left
+	je		p1lf										; player 1 left
 	cmp		al,"s"
-	je		p1dw									; player 1 down
+	je		p1dw										; player 1 down
 	cmp		al,"d"
-	je		p1rt									; player 1 right
+	je		p1rt										; player 1 right
 
 	cmp		al,"i"		
-	je		p2up									; player 2 up
+	je		p2up										; player 2 up
 	cmp		al,"j"		
-	je		p2lf									; player 2 left
+	je		p2lf										; player 2 left
 	cmp		al,"k"		
-	je		p2dw									; player 2 down
+	je		p2dw										; player 2 down
 	cmp		al,"l"		
-	je		p2rt									; player 2 right
+	je		p2rt										; player 2 right
 
 	cmp		al,"q"
 	je		exit
 
 	jmp		mainloop
+
 p1up:
 	call	removeplayer1color
 	dec		p1ypos
@@ -123,7 +148,7 @@ p1rt:
 	inc		p1xpos
 	jmp		paintp1
 paintp1:
-	mov		al, 01h								; player color
+	mov		al, 01h									; player color
 	call	paintplayer1
 	jmp		mainloop
 exit:
@@ -149,12 +174,14 @@ p2rt:
 	inc		p2xpos
 	jmp		paintp2
 paintp2:
-	mov		al, 02h								; player color
+	mov		al, 02h									; player color
 	call 	paintplayer2
 	jmp 	mainloop
 
 	ret
 gameloop endp
+
+; ############################# READ CHAR #############################
 
 readchar proc
     mov 	ah, 01H
@@ -173,7 +200,7 @@ readchar endp
 
 removeplayer1color proc near
 	push	ax
-	mov		al, 00								; paint black
+	mov		al, 00									; paint black
 	call 	paintplayer1
 	pop		ax
 	ret
@@ -183,7 +210,7 @@ removeplayer1color endp
 
 removeplayer2color proc near
 	push	ax
-	mov		al, 00								; paint black
+	mov		al, 00									; paint black
 	call 	paintplayer2
 	pop		ax
 	ret
@@ -236,22 +263,39 @@ paintenemies proc near
 	push	bx
 	push	cx
 	push	dx
-	
-	mov		ah, 0ch
-	mov		al, 00h
-	mov		cx, enexpos
-	mov		dx, eneypos
 
-	call paintenemybox							; paints black box
+	mov		cx, 4
+	lea		bx, enemyshipxpos
+	
+paintblackenemyloop:							; ### PAINTS BLACK ###
+	push	cx
+	mov		ah, 0ch
+	xor		al, al
+	mov		cx, [bx]
+	xor		ch, ch
+	mov		dx, eneypos
+	call 	paintenemybox							; paints black box
+
+	inc		bx
+	pop		cx
+	loop paintblackenemyloop
 
 	inc		eneypos
 
+	lea		bx, enemyshipxpos
+	mov		cx, 4
+paintenemyloop:										; ### PAINTS COLOR ###
+	push	cx
 	mov		ah, 0ch
 	mov		al, 01h
-	mov		cx, enexpos
+	mov		cx, [bx]
+	xor		ch, ch
 	mov		dx, eneypos
 
-	call paintenemybox
+	call 	paintenemybox
+	inc		bx
+	pop		cx
+	loop	paintenemyloop
 
 	pop		dx
 	pop		cx
@@ -305,41 +349,47 @@ paintplayerbox endp
 ; ############################# PAINT ENEMY BOX #############################
 
 paintenemybox proc near
+	push 	bx
+	push	cx
+	push	dx
 	sub		cx, 4								; top left corner
 	sub		dx, 3								; top left corner
-	mov		bl, 9								; 9 pixels right
+	mov		bx, 9								; 9 pixels right
 painthorztopenemy:
 	
 	int		10h
 	inc		cx
-	dec		bl
-	cmp		bl, 0
+	dec		bx
+	cmp		bx, 0
 	ja		painthorztopenemy
 
-	mov		bl, 9								; 9 pixels down
+	mov		bx, 9								; 9 pixels down
 paintvertrightenemy:
 	int		10h
 	inc		dx
-	dec		bl
-	cmp		bl, 0
+	dec		bx
+	cmp		bx, 0
 	ja		paintvertrightenemy
 
-	mov		bl, 9
+	mov		bx, 9
 painthorzdownenemy:
 	int		10h
 	dec		cx
-	dec		bl
-	cmp		bl, 0
+	dec		bx
+	cmp		bx, 0
 	ja		painthorzdownenemy
 
-	mov		bl, 9								; 9 pixels down
+	mov		bx, 9								; 9 pixels down
 paintvertleftenemy:
 	int		10h
 	dec		dx
-	dec		bl
-	cmp		bl, 0
+	dec		bx
+	cmp		bx, 0
 	ja		paintvertleftenemy
 
+	pop		dx
+	pop		cx
+	pop		bx
 	ret
 paintenemybox endp
 
@@ -349,7 +399,7 @@ random PROC
 	MOV 	AX, Seed ; Move the seed value into AX
 	MOV 	DX, 8405H ; Move 8405H into DX
 	MUL 	DX ; Put 8405H x Seed into DX:AX
-	INC 	AX ; Increment AX
+	ADD 	AX, 13 ; Increment AX
 	MOV 	Seed, AX ; We have a new seed
 	RET
 random ENDP
@@ -357,15 +407,15 @@ random ENDP
 ; ############################# DELAY PROC #############################
 
 delay proc 
-	mov ah, 00
-	int 1Ah
-	mov bx, dx
+	mov 	ah, 00
+	int 	1Ah
+	mov 	bx, dx
     
 delaytag:
-	int 1Ah
-	sub dx, bx
-	cmp dl, 1								; delay time                                                      
-	jl delaytag
+	int 	1Ah
+	sub 	dx, bx
+	cmp 	dl, 1								; delay time                                                      
+	jl 		delaytag
 	ret
 delay endp
 
