@@ -30,22 +30,6 @@ paintlineloop:
 	jnz		paintlineloop
 endm
 
-setupenemiescords macro
-	mov		cx, 4
-	lea		bx, enemyshipxpos
-loopcoords:
-	push	bx
-	call 	random
-	mov		ax, seed
-	mov		bx, 180
-	xor		dx, dx
-	div		bx
-	pop		bx
-	mov		[bx], dx
-	inc		bx
-	loop loopcoords
-endm
-
 stack segment para stack
 	db 64 dup ('mystack')
 stack ends
@@ -62,8 +46,13 @@ data segment para 'data'
 
 	eneypos					dw	30
 
-	outputfile 			db "printscreen.ppm",0
-	outhandle 			dw ?
+	outputfile 			db	"printscreen.ppm",0
+	outhandle 			dw	?
+
+	scoremessage		db	"SCORE: $"
+	score						dw	0
+
+	lasers					db	30 dup (0)
 
 data ends
 
@@ -82,7 +71,8 @@ main proc far
 
 	setupscreen															; macro to setup the video mode
 	paintscoreline
-	setupenemiescords												; macro for setting up enemies coords
+	call setupenemiescords												; macro for setting up enemies coords
+	call	printscorestring_at_pos
 	call	gameloop													; main game loop
 
 	normalscreen														; macro to setup normal text mode
@@ -230,6 +220,24 @@ p2rtproc proc near
 	ret
 p2rtproc endp
 
+setupenemiescords proc near
+	mov		cx, 4
+	lea		bx, enemyshipxpos
+	mov		dx, 30
+	mov		eneypos, dx
+loopcoords:
+	push	bx
+	call 	random
+	mov		ax, seed
+	mov		bx, 180
+	xor		dx, dx
+	div		bx
+	pop		bx
+	mov		[bx], dx
+	inc		bx
+	loop loopcoords
+setupenemiescords endp
+
 ; ############################# READ CHAR #############################
 
 readchar proc
@@ -243,6 +251,23 @@ keybdpressed:
 	int		16h																; extract the keystroke from the buffer, clears zf and buffer
 	ret
 readchar endp    
+
+; ############################# SET CURSOR POS #############################
+
+printscorestring_at_pos proc
+
+	mov		ah, 02h														; set cursor position service
+	xor		bh, bh														; display page number
+	mov		dh, 2															; row
+	mov		dl, 31														; column
+	int		10h
+
+	mov		ah, 09h
+	lea		dx, scoremessage
+	int		21h
+
+	ret
+printscorestring_at_pos endp
 
 ; ############################# REMOVE PLAYER 1 PROC #############################
 
@@ -386,16 +411,15 @@ endplayerloop:
 paintplayerbox endp
 
 ; ############################# PAINT ENEMY BOX #############################
-; receives colors and positions
+; receives colors and positions 0217
 paintenemybox proc near
-	push	bx
 	push	cx
 	push	dx
+	push	bx
 
 	sub		cx, 3															; top left corner (cx = x)
 	sub		dx, 3															; top left corner (dx = y)
 	xor		bx, bx
-
 paintyenemy:
 	cmp		bl, 7
 	je		endenemyloop
@@ -403,31 +427,82 @@ paintyenemy:
 paintxenemy:
 	cmp		bh, 7
 	je continueenemy
-	push	bx
+	; inside "for" loop
+	push	bx	; +1 PUSH
 	xor		bh, bh
+	push	ax	; +1 PUSH
+	mov		ah, 0dh														; checks pixel color for colision
 	int		10h
-	pop		bx
+	cmp		al, 010b
+	je		pixelcollision
+	cmp		al, 001b
+	je		pixelcollision
+	mov		ah, 0ch
+	pop		ax	; -1 POP
+	int		10h																; bh must be 0 (screen 0)
+	pop		bx	; -1 POP
+
 	inc		cx
 	inc		bh
 	jmp		paintxenemy
-continueenemy:
+continueenemy:														; 251
 	inc		bl
 	inc		dx
 	sub		cx, 7
 	jmp		paintyenemy
 
+pixelcollision:
+	pop		ax	; -1 POP
+	pop		dx	; -1 POP
+	call	enemyshipcollision
 endenemyloop:
+	pop		bx
 	pop		dx
 	pop		cx
-	pop		bx
 	ret
 paintenemybox endp
+
+enemyshipcollision proc near
+	;pop		bx
+	;mov		dx, 30 TODO:
+	;mov		[bx], dx
+	call setupenemiescords
+	inc		score
+	call	paintscore
+	; TODO: gerar uma nova coord no array
+	;push	bx
+	ret
+enemyshipcollision endp
+
+
+paintscore proc near
+
+	mov		ah, 02h														; set cursor position service
+	xor		bh, bh														; display page number
+	mov		dh, 3															; row
+	mov		dl, 32														; column
+	int		10h
+
+	mov		ax, score
+
+	call	dispx
+	xor		ax, ax
+
+	ret
+paintscore endp
 
 ; ############################# FIRE PLAYER LASER BEAM #############################
 
 firebeamplayer1 proc near
+	push	ax
+	push	bx
 	push	cx
 	push	dx
+
+	;lea		bx, lasers
+	;add		bx, 29
+	;mov		cx, [bx]													; cx := number of total laser beams on screen
+	;sub		bx, 29
 
 	mov		ah, 0ch
 	mov		al, 01h
@@ -454,6 +529,8 @@ loopbeamp1del:
 
 	pop		dx
 	pop		cx
+	pop		bx
+	pop		ax
 	ret
 firebeamplayer1 endp
 
@@ -552,6 +629,35 @@ endsavescreen:
 	pop		ax
 	ret
 savescreen endp
+
+; prints do screen hex num in reg ax
+dispx proc near
+	push	dx					; save reg values
+	push	cx
+	push	bx
+
+	mov		ax, score
+	xor		cx, cx
+	mov		bx, 10
+dispx1:
+	xor		dx, dx
+	div		bx
+	push	dx					; save remainder
+	inc		cx					; count remainder
+	or		ax, ax				; test quotient
+	jnz		dispx1				; if not zero
+dispx2:
+	pop		dx					; display numbers
+	mov		ah, 6
+	add		dl, 30h				; convert to ascii
+	int		21h
+	loop	dispx2				; repeat
+
+	pop		bx					; restore previous reg values
+	pop		cx
+	pop		dx
+	ret
+dispx endp
 
 code ends
 end
