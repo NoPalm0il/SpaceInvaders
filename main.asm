@@ -51,8 +51,8 @@ data segment para 'data'
 	lasersp2_y			db	20 dup (?)
 	totalp2lasers		db	0
 
-	enemyship_xpos		dw	0h,0h,0h,0h
-	enemyship_ypos		dw	0h,0h,0h,0h
+	enemyship_xpos		dw	0h,0h,0h,0h,0h
+	enemyship_ypos		dw	0h,0h,0h,0h,0h
 
 	outputfile 			db	"printscreen.ppm",0
 	outhandle 			dw	?
@@ -82,17 +82,17 @@ main proc far
 	paintscoreline
 	call	setupenemiescords				; macro for setting up enemies coords
 	call	printscorestring_at_pos
+	call	paintscore
 	call	gameloop						; main game loop
 
 	normalscreen							; macro to setup normal text mode
 
 	ret
-
 main endp
 
 gameloop proc near
 
-	mov		al, 01h														; player color
+	mov		al, 01h							; player color
 	call	paintplayer1
 	mov		al, 02h							; player color
 	call	paintplayer2
@@ -103,12 +103,12 @@ mainloop:									; ################## MAIN LOOP ##################
 	call 	delay
 	call	paintenemies
 	call 	readchar
-	call	drawlasers
+	call	drawlasersp1
+	call	drawlasersp2
 
 	mov		al, isgamealive
 	cmp		al, 1
-	
-	je mainloop
+	je		mainloop
 
 	ret
 gameloop endp
@@ -157,13 +157,13 @@ keyboard_keys proc near
 	cmp		al,"x"
 	je		shootp1
 
-	cmp		al,"u"
+	cmp		al,"i"
 	je		p2up							; player 2 up
-	cmp		al,"h"		
-	je		p2lf							; player 2 left
 	cmp		al,"j"		
-	je		p2dw							; player 2 down
+	je		p2lf							; player 2 left
 	cmp		al,"k"		
+	je		p2dw							; player 2 down
+	cmp		al,"l"		
 	je		p2rt							; player 2 right
 	cmp		al,"n"
 	je		shootp2
@@ -191,7 +191,7 @@ paintp1:
 	call	paintplayer1
 	jmp		exit
 shootp1:
-	call	firebeamplayer1
+	call	firelaserplayer1
 	jmp		exit
 saveimg:
 	call 	savescreen
@@ -218,7 +218,7 @@ paintp2:
 	call 	paintplayer2
 	jmp 	exit
 shootp2:
-	call	firebeamplayer2
+	call	firelaserplayer2
 
 	ret
 keyboard_keys endp
@@ -530,7 +530,6 @@ enemyshipcollision endp
 
 
 paintscore proc near
-
 	mov		ah, 02h							; set cursor position service
 	xor		bh, bh							; display page number
 	mov		dh, 3							; row
@@ -545,10 +544,48 @@ paintscore proc near
 	ret
 paintscore endp
 
-drawlasers proc near
+drawlasersp1 proc near
 	xor		ax, ax
-	cmp		ax, totalp1lasers
-	je		end_laserdraw
+	cmp		al, totalp1lasers				; al := 0
+	jne		paintblacklasersp1
+	ret
+paintblacklasersp1:							; 002c4H
+	lea		bx, lasersp1_x
+	add		bx, ax
+	mov		cx, [bx]
+	xor		ch, ch
+	lea		bx, lasersp1_y
+	add		bx, ax
+	mov		dx, [bx]
+	xor		dh, dh
+	push	ax
+	xor		bx, bx
+paintblackvertl1:
+	mov		ah, 0ch
+	mov		al, 0
+	int		10h
+	dec		dx
+	inc		bl
+	cmp		bl, 6							; paint 6 pixels vertical
+	jb		paintblackvertl1
+
+	pop		ax
+	inc		al
+	cmp		al, totalp1lasers
+	jb		paintblacklasersp1	; end loop
+
+	xor		ch, ch
+	mov		cl, totalp1lasers
+	lea		bx, lasersp1_y
+decp1lasersy:
+	mov		ax, [bx]
+	dec		ax
+	dec		ax
+	mov		[bx], ax
+	inc		bx
+	loop	decp1lasersy
+
+	xor		ax, ax
 paintlasersp1:
 	lea		bx, lasersp1_x
 	add		bx, ax
@@ -558,75 +595,154 @@ paintlasersp1:
 	add		bx, ax
 	mov		dx, [bx]
 	xor		dh, dh
-		
 	push	ax
-	xor		bx, bx
-	mov		ah, 0ch
-	mov		al, 1
-paintvertl1:
-	int		10h
-	inc		dx
-	inc		bl
-	cmp		bl, 5							; paint 5 pixels vertical
-	jb		paintvertl1
-	pop		ax
 
-	inc		ax
-	cmp		ax, totalp1lasers
+	xor		bx, bx
+paintvertl1:
+	mov		ah, 0ch
+	mov		al, 001b
+	int		10h
+	dec		dx
+	inc		bl
+	cmp		bl, 6							; paint 6 pixels vertical
+	jb		paintvertl1
+
+	pop		ax
+	inc		al
+	cmp		al, totalp1lasers
 	jb		paintlasersp1
 
-end_laserdraw:
 	ret
-drawlasers endp
+drawlasersp1 endp
+
+drawlasersp2 proc near
+	xor		ax, ax
+	cmp		al, totalp2lasers				; al := 0
+	jne		paintblacklasersp2
+	ret
+paintblacklasersp2:							; 002c4H
+	lea		bx, lasersp2_x
+	add		bx, ax
+	mov		cx, [bx]
+	xor		ch, ch
+	lea		bx, lasersp2_y
+	add		bx, ax
+	mov		dx, [bx]
+	xor		dh, dh
+	push	ax
+	xor		bx, bx
+paintblackvertl2:
+	mov		ah, 0ch
+	mov		al, 0
+	int		10h
+	dec		dx
+	inc		bl
+	cmp		bl, 6							; paint 6 pixels vertical
+	jb		paintblackvertl2
+
+	pop		ax
+	inc		al
+	cmp		al, totalp2lasers
+	jb		paintblacklasersp2	; end loop
+
+	xor		ch, ch
+	mov		cl, totalp2lasers
+	lea		bx, lasersp2_y
+decp2lasersy:
+	mov		ax, [bx]
+	dec		ax
+	dec		ax
+	mov		[bx], ax
+	inc		bx
+	loop	decp2lasersy
+
+	xor		ax, ax
+paintlasersp2:
+	lea		bx, lasersp2_x
+	add		bx, ax
+	mov		cx, [bx]
+	xor		ch, ch
+	lea		bx, lasersp2_y
+	add		bx, ax
+	mov		dx, [bx]
+	xor		dh, dh
+	push	ax
+
+	xor		bx, bx
+paintvertl2:
+	mov		ah, 0ch
+	mov		al, 010b
+	int		10h
+	dec		dx
+	inc		bl
+	cmp		bl, 6							; paint 6 pixels vertical
+	jb		paintvertl2
+
+	pop		ax
+	inc		al
+	cmp		al, totalp2lasers
+	jb		paintlasersp2
+
+	ret
+drawlasersp2 endp
 
 ; ############################# FIRE PLAYER LASER BEAM #############################
 
-firebeamplayer1 proc near
+firelaserplayer1 proc near
 	push	ax
 	push	bx
 	push	cx
 	push	dx
 
+	mov		al, totalp1lasers
 
+	lea		bx, lasersp1_x
+	add		bl, al
+	mov		cx, p1xpos
+	mov		[bx], cx
+
+	lea		bx, lasersp1_y
+	add		bl, al
+	mov		dx, p1ypos
+	sub		dx, 5
+	mov		[bx], dx
+
+	inc		totalp1lasers
 
 	pop		dx
 	pop		cx
 	pop		bx
 	pop		ax
 	ret
-firebeamplayer1 endp
+firelaserplayer1 endp
 
-firebeamplayer2 proc near
+firelaserplayer2 proc near
+	push	ax
+	push	bx
 	push	cx
 	push	dx
 
-	mov		ah, 0ch
-	mov		al, 02h
-	xor		bx, bx
+	mov		al, totalp2lasers
+
+	lea		bx, lasersp2_x
+	add		bl, al
 	mov		cx, p2xpos
-	mov		dx,	p2ypos
-	sub		dx, 4
-loopbeamp2:
-	int		10h
-	dec		dx
-	cmp		dx, 0
-	jnz		loopbeamp2
+	mov		[bx], cx
 
-	call	delay
+	lea		bx, lasersp2_y
+	add		bl, al
+	mov		dx, p2ypos
+	sub		dx, 5
+	mov		[bx], dx
 
-	xor		al, al							; pixel color
-	mov		dx,	p2ypos
-	sub		dx, 4
-loopbeamp2del:
-	int		10h
-	dec		dx
-	cmp		dx, 0
-	jnz		loopbeamp2del
+	inc		totalp2lasers
 
 	pop		dx
 	pop		cx
+	pop		bx
+	pop		ax
 	ret
-firebeamplayer2 endp
+firelaserplayer2 endp
 
 ; ############################# KINDA RANDOM PROC #############################
 
