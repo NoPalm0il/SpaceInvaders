@@ -1,20 +1,20 @@
-setupscreen macro													; setup video mode
-	xor		ah, ah														; graph mode ah:=0
-	mov		al, 04h														; 320x200 color mode
+setupscreen macro								; setup video mode
+	xor		ah, ah								; graph mode ah:=0
+	mov		al, 04h								; 320x200 color mode
 	int		10h
 ; hide cursor
-	mov		ch, 32														; sets the cursor size
-	mov		ah, 1															; cursor size service
+	mov		ch, 32								; sets the cursor size
+	mov		ah, 1								; cursor size service
 	int		10h
 ; palete de cores
-	mov		ax, 0dh														; color palette for display mode
-	xor		bl, bl														; color or palette(0) to be used with color id
+	mov		ax, 0dh								; color palette for display mode
+	xor		bl, bl								; color or palette(0) to be used with color id
 	int		10h
 endm
 
-normalscreen macro												; sets the normal video mode
+normalscreen macro								; sets the normal video mode
 	xor		ah, ah
-	mov		al, 03h														; normal video mode (text)
+	mov		al, 03h								; normal video mode (text)
 	int		10h
 endm
 
@@ -35,24 +35,33 @@ stack segment para stack
 stack ends
 
 data segment para 'data'
-	seed 						dw 	9371h
-	p1xpos					dw	50									; p1 x pos
-	p1ypos					dw	150									; p1 y pos
-	p2xpos					dw	150									; p2 x pos
-	p2ypos					dw	150									; p2 y pos
+	seed 				dw 	9371h
 
-	enemyshipxpos		dw	0h,0h,0h,0h
-	enemyshipypos		dw	0h,0h,0h,0h
+	p1xpos				dw	50					; p1 x pos
+	p1ypos				dw	150					; p1 y pos
+	isp1alive			db	1					; is player 1 alive? 1 = true
+	lasersp1_x			db	20 dup (?)
+	lasersp1_y			db	20 dup (?)
+	totalp1lasers		db	0
 
-	eneypos					dw	30
+	p2xpos				dw	150					; p2 x pos
+	p2ypos				dw	150					; p2 y pos
+	isp2alive			db	1					; is player 2 alive? 1 = true
+	lasersp2_x			db	20 dup (?)
+	lasersp2_y			db	20 dup (?)
+	totalp2lasers		db	0
+
+	enemyship_xpos		dw	0h,0h,0h,0h
+	enemyship_ypos		dw	0h,0h,0h,0h
 
 	outputfile 			db	"printscreen.ppm",0
 	outhandle 			dw	?
 
 	scoremessage		db	"SCORE: $"
-	score						dw	0
+	score				dw	0
 
-	lasers					db	30 dup (0)
+	isgamepaused		db	0
+	isgamealive			db	1
 
 data ends
 
@@ -69,13 +78,13 @@ main proc far
 	mov 	ds,ax
 	mov 	es,ax
 
-	setupscreen															; macro to setup the video mode
+	setupscreen								; macro to setup the video mode
 	paintscoreline
-	call setupenemiescords												; macro for setting up enemies coords
+	call	setupenemiescords				; macro for setting up enemies coords
 	call	printscorestring_at_pos
-	call	gameloop													; main game loop
+	call	gameloop						; main game loop
 
-	normalscreen														; macro to setup normal text mode
+	normalscreen							; macro to setup normal text mode
 
 	ret
 
@@ -85,66 +94,111 @@ gameloop proc near
 
 	mov		al, 01h														; player color
 	call	paintplayer1
-	mov		al, 02h														; player color
+	mov		al, 02h							; player color
 	call	paintplayer2
 	call 	paintenemies
 
-mainloop:												; ################## MAIN LOOP ##################
+mainloop:									; ################## MAIN LOOP ##################
 
 	call 	delay
 	call	paintenemies
 	call 	readchar
+	call	drawlasers
 
+	mov		al, isgamealive
+	cmp		al, 1
+	
+	je mainloop
+
+	ret
+gameloop endp
+
+setupenemiescords proc near
+	mov		cx, 4
+	lea		bx, enemyship_xpos
+	mov		dx, 30
+loopcoords:
+	push	bx
+	call 	random
+	mov		ax, seed
+	mov		bx, 180
+	xor		dx, dx
+	div		bx
+	pop		bx
+	mov		[bx], dx
+	inc		bx
+	loop	loopcoords
+setupenemiescords endp
+
+; ############################# READ CHAR #############################
+
+readchar proc near
+	mov		ah, 01h
+	int		16h
+	jnz		keybdpressed
+	xor		dl, dl
+	ret
+keybdpressed:
+	xor		ah, ah
+	int		16h								; extract the keystroke from the buffer, clears zf and buffer
+	call	keyboard_keys
+	ret
+readchar endp    
+
+keyboard_keys proc near
 	cmp		al,"w"
-	je		p1up															; player 1 up
+	je		p1up							; player 1 up
 	cmp		al,"a"
-	je		p1lf															; player 1 left
+	je		p1lf							; player 1 left
 	cmp		al,"s"
-	je		p1dw															; player 1 down
+	je		p1dw							; player 1 down
 	cmp		al,"d"
-	je		p1rt															; player 1 right
+	je		p1rt							; player 1 right
 	cmp		al,"x"
 	je		shootp1
 
-	cmp		al,"u"		
-	je		p2up															; player 2 up
+	cmp		al,"u"
+	je		p2up							; player 2 up
 	cmp		al,"h"		
-	je		p2lf															; player 2 left
+	je		p2lf							; player 2 left
 	cmp		al,"j"		
-	je		p2dw															; player 2 down
+	je		p2dw							; player 2 down
 	cmp		al,"k"		
-	je		p2rt															; player 2 right
+	je		p2rt							; player 2 right
 	cmp		al,"n"
 	je		shootp2
 
 	cmp		al,"g"
 	je		saveimg
 	cmp		al,"q"
-	je		exit
+	je		quit_game
 
-	jmp		mainloop
+	jmp		exit
 p1up:
 	call	p1upproc
 	jmp		paintp1
 p1dw:
-	call p1dwproc
+	call	p1dwproc
 	jmp		paintp1
 p1lf:
-	call p1lfproc
+	call	p1lfproc
 	jmp		paintp1
 p1rt:
-	call p1rtproc
+	call	p1rtproc
 	jmp		paintp1
 paintp1:
-	mov		al, 01h														; player color
+	mov		al, 01h							; player color
 	call	paintplayer1
-	jmp		mainloop
+	jmp		exit
 shootp1:
 	call	firebeamplayer1
-	jmp		mainloop
+	jmp		exit
 saveimg:
 	call 	savescreen
-	jmp		mainloop
+	jmp		exit
+quit_game:
+	xor		ah, ah
+	mov		isgamealive, ah
 exit:
 	ret
 p2up:
@@ -160,16 +214,16 @@ p2rt:
 	call	p2rtproc
 	jmp		paintp2
 paintp2:
-	mov		al, 02h														; player color
+	mov		al, 02h							; player color
 	call 	paintplayer2
-	jmp 	mainloop
+	jmp 	exit
 shootp2:
 	call	firebeamplayer2
-	jmp		mainloop
 
 	ret
-gameloop endp
+keyboard_keys endp
 
+; ################################################################## KEYBOARD
 p1upproc proc near
 	call	removeplayer1color
 	dec		p1ypos
@@ -220,46 +274,17 @@ p2rtproc proc near
 	ret
 p2rtproc endp
 
-setupenemiescords proc near
-	mov		cx, 4
-	lea		bx, enemyshipxpos
-	mov		dx, 30
-	mov		eneypos, dx
-loopcoords:
-	push	bx
-	call 	random
-	mov		ax, seed
-	mov		bx, 180
-	xor		dx, dx
-	div		bx
-	pop		bx
-	mov		[bx], dx
-	inc		bx
-	loop loopcoords
-setupenemiescords endp
+; ################################################################## KEYBOARD
 
-; ############################# READ CHAR #############################
-
-readchar proc
-	mov		ah, 01h
-	int		16h
-	jnz		keybdpressed
-	xor		dl, dl
-	ret
-keybdpressed:
-	xor		ah, ah
-	int		16h																; extract the keystroke from the buffer, clears zf and buffer
-	ret
-readchar endp    
 
 ; ############################# SET CURSOR POS #############################
 
-printscorestring_at_pos proc
+printscorestring_at_pos proc near
 
-	mov		ah, 02h														; set cursor position service
-	xor		bh, bh														; display page number
-	mov		dh, 2															; row
-	mov		dl, 31														; column
+	mov		ah, 02h							; set cursor position service
+	xor		bh, bh							; display page number
+	mov		dh, 2							; row
+	mov		dl, 31							; column
 	int		10h
 
 	mov		ah, 09h
@@ -273,7 +298,7 @@ printscorestring_at_pos endp
 
 removeplayer1color proc near
 	push	ax
-	mov		al, 00														; paint black
+	mov		al, 00							; paint black
 	call 	paintplayer1
 	pop		ax
 	ret
@@ -283,7 +308,7 @@ removeplayer1color endp
 
 removeplayer2color proc near
 	push	ax
-	mov		al, 00														; paint black
+	mov		al, 00							; paint black
 	call 	paintplayer2
 	pop		ax
 	ret
@@ -297,8 +322,8 @@ paintplayer1 proc near
 	push	dx
 
 	mov		ah, 0ch
-	mov		cx, p1xpos												; horizontal pos
-	mov		dx, p1ypos												; vert pos
+	mov		cx, p1xpos						; horizontal pos
+	mov		dx, p1ypos						; vert pos
 
 	call 	paintplayerbox
 
@@ -317,8 +342,8 @@ paintplayer2 proc near
 	push	dx
 
 	mov		ah, 0ch
-	mov		cx, p2xpos												; horizontal pos
-	mov		dx, p2ypos												; vert pos
+	mov		cx, p2xpos						; horizontal pos
+	mov		dx, p2ypos						; vert pos
 
 	call 	paintplayerbox
 
@@ -337,44 +362,72 @@ paintenemies proc near
 	push	cx
 	push	dx
 
+	lea		bx, enemyship_xpos
+	lea		ax, enemyship_ypos
 	mov		cx, 4
-	lea		bx, enemyshipxpos
 	
-paintblackenemyloop:											; ### PAINTS BLACK ###
-	push	cx
-	mov		ah, 0ch
-	xor		al, al
-	mov		cx, [bx]
+paintblackenemyloop:						; ### PAINTS BLACK ###
+	push	cx	; +1 PUSH
+	mov		cx, [bx]						; load enemy x pos
 	xor		ch, ch
-	mov		dx, eneypos
-	call 	paintenemybox											; paints black box
+	;--
+	push	bx	; +1 PUSH bx has xcoords array and index
+	mov		bx, ax
+	mov		dx, [bx]
+	xor		dh, dh
+	inc		bx
+	mov		ax, bx
+	pop		bx
+	;--
+	push	ax
+	mov		ah, 0ch
+	mov		al, 0							; black color
+	call 	paintenemybox
+	pop		ax
 
 	inc		bx
-	pop		cx
+	pop		cx	; -1 POP
 	loop paintblackenemyloop
 
-	inc		eneypos
-
-	lea		bx, enemyshipxpos
+	lea		bx, enemyship_ypos
 	mov		cx, 4
-paintenemyloop:														; ### PAINTS COLOR ###
-	push	cx
-	mov		ah, 0ch
-	mov		al, 100b													; red color
-	mov		cx, [bx]
-	xor		ch, ch
-	mov		dx, eneypos
-
-	call 	paintenemybox
+enemy_discent:
+	mov		ax, [bx]
+	inc		ax
+	mov		[bx], ax
 	inc		bx
-	pop		cx
+	loop	enemy_discent
+
+	lea		bx, enemyship_xpos
+	lea		ax, enemyship_ypos
+	mov		cx, 4
+paintenemyloop:								; ### PAINTS COLOR ###
+	push	cx	; +1 PUSH
+	mov		cx, [bx]						; load enemy x pos
+	xor		ch, ch
+	;--
+	push	bx	; +1 PUSH bx has xcoords array and index
+	mov		bx, ax
+	mov		dx, [bx]
+	xor		dh, dh
+	inc		bx
+	mov		ax, bx
+	pop		bx
+	;--
+	push	ax
+	mov		ah, 0ch
+	mov		al, 100b						; red color
+	call 	paintenemybox
+	pop		ax
+
+	inc		bx
+	pop		cx	; -1 POP
 	loop	paintenemyloop
 
 	pop		dx
 	pop		cx
 	pop		bx
 	pop		ax
-	
 	ret
 paintenemies endp
 
@@ -382,9 +435,9 @@ paintenemies endp
 
 paintplayerbox proc near
 	push	bx
-	sub		cx, 4															; top left corner
-	sub		dx, 3															; top left corner
-	xor		bx, bx														; 9 pixels right
+	sub		cx, 4							; top left corner
+	sub		dx, 3							; top left corner
+	xor		bx, bx							; 9 pixels right
 
 paintyplayer:
 	cmp		bl, 7
@@ -410,15 +463,16 @@ endplayerloop:
 	ret
 paintplayerbox endp
 
-; ############################# PAINT ENEMY BOX #############################
-; receives colors and positions 0217
+; al = color
+; cx = x
+; dx = y
 paintenemybox proc near
 	push	cx
 	push	dx
-	push	bx
+	push	bx								; bx still has the index to the array
 
-	sub		cx, 3															; top left corner (cx = x)
-	sub		dx, 3															; top left corner (dx = y)
+	sub		cx, 3							; top left corner (cx = x)
+	sub		dx, 3							; top left corner (dx = y)
 	xor		bx, bx
 paintyenemy:
 	cmp		bl, 7
@@ -426,12 +480,12 @@ paintyenemy:
 	xor		bh, bh
 paintxenemy:
 	cmp		bh, 7
-	je continueenemy
+	je		continueenemy
 	; inside "for" loop
 	push	bx	; +1 PUSH
 	xor		bh, bh
 	push	ax	; +1 PUSH
-	mov		ah, 0dh														; checks pixel color for colision
+	mov		ah, 0dh							; checks pixel color for colision
 	int		10h
 	cmp		al, 010b
 	je		pixelcollision
@@ -439,13 +493,13 @@ paintxenemy:
 	je		pixelcollision
 	mov		ah, 0ch
 	pop		ax	; -1 POP
-	int		10h																; bh must be 0 (screen 0)
+	int		10h								; bh must be 0 (screen 0)
 	pop		bx	; -1 POP
 
 	inc		cx
 	inc		bh
 	jmp		paintxenemy
-continueenemy:														; 251
+continueenemy:								; 251
 	inc		bl
 	inc		dx
 	sub		cx, 7
@@ -454,6 +508,8 @@ continueenemy:														; 251
 pixelcollision:
 	pop		ax	; -1 POP
 	pop		dx	; -1 POP
+	pop		bx
+	push	bx								; bx stays with the array and index
 	call	enemyshipcollision
 endenemyloop:
 	pop		bx
@@ -463,10 +519,8 @@ endenemyloop:
 paintenemybox endp
 
 enemyshipcollision proc near
-	;pop		bx
-	;mov		dx, 30 TODO:
-	;mov		[bx], dx
-	call setupenemiescords
+	mov		dx, 30
+	sub		[bx], dx
 	inc		score
 	call	paintscore
 	; TODO: gerar uma nova coord no array
@@ -477,10 +531,10 @@ enemyshipcollision endp
 
 paintscore proc near
 
-	mov		ah, 02h														; set cursor position service
-	xor		bh, bh														; display page number
-	mov		dh, 3															; row
-	mov		dl, 32														; column
+	mov		ah, 02h							; set cursor position service
+	xor		bh, bh							; display page number
+	mov		dh, 3							; row
+	mov		dl, 32							; column
 	int		10h
 
 	mov		ax, score
@@ -491,6 +545,40 @@ paintscore proc near
 	ret
 paintscore endp
 
+drawlasers proc near
+	xor		ax, ax
+	cmp		ax, totalp1lasers
+	je		end_laserdraw
+paintlasersp1:
+	lea		bx, lasersp1_x
+	add		bx, ax
+	mov		cx, [bx]
+	xor		ch, ch
+	lea		bx, lasersp1_y
+	add		bx, ax
+	mov		dx, [bx]
+	xor		dh, dh
+		
+	push	ax
+	xor		bx, bx
+	mov		ah, 0ch
+	mov		al, 1
+paintvertl1:
+	int		10h
+	inc		dx
+	inc		bl
+	cmp		bl, 5							; paint 5 pixels vertical
+	jb		paintvertl1
+	pop		ax
+
+	inc		ax
+	cmp		ax, totalp1lasers
+	jb		paintlasersp1
+
+end_laserdraw:
+	ret
+drawlasers endp
+
 ; ############################# FIRE PLAYER LASER BEAM #############################
 
 firebeamplayer1 proc near
@@ -499,33 +587,7 @@ firebeamplayer1 proc near
 	push	cx
 	push	dx
 
-	;lea		bx, lasers
-	;add		bx, 29
-	;mov		cx, [bx]													; cx := number of total laser beams on screen
-	;sub		bx, 29
 
-	mov		ah, 0ch
-	mov		al, 01h
-	xor		bx, bx
-	mov		cx, p1xpos
-	mov		dx,	p1ypos
-	sub		dx, 4
-loopbeamp1:
-	int		10h
-	dec		dx
-	cmp		dx, 0
-	jnz		loopbeamp1
-
-	call	delay
-
-	xor		al, al														; pixel color
-	mov		dx,	p1ypos
-	sub		dx, 4
-loopbeamp1del:
-	int		10h
-	dec		dx
-	cmp		dx, 0
-	jnz		loopbeamp1del
 
 	pop		dx
 	pop		cx
@@ -552,7 +614,7 @@ loopbeamp2:
 
 	call	delay
 
-	xor		al, al														; pixel color
+	xor		al, al							; pixel color
 	mov		dx,	p2ypos
 	sub		dx, 4
 loopbeamp2del:
@@ -569,11 +631,11 @@ firebeamplayer2 endp
 ; ############################# KINDA RANDOM PROC #############################
 
 random proc near
-	mov		ax, seed													; Move the seed value into AX
-	mov		dx, 8405h													; Move 8405H into DX
-	mul		dx																; Put 8405H x Seed into DX:AX
-	add		ax, 13														; Increment AX
-	mov		seed, ax													; We have a new seed
+	mov		ax, seed						; Move the seed value into AX
+	mov		dx, 8405h						; Move 8405H into DX
+	mul		dx								; Put 8405H x Seed into DX:AX
+	add		ax, 13							; Increment AX
+	mov		seed, ax						; We have a new seed
 	ret
 random endp
 
@@ -592,7 +654,7 @@ delay proc near
 delaytag:
 	int		1Ah
 	sub		dx, bx
-	cmp		dl, 1															; delay time                                                      
+	cmp		dl, 1							; delay time                                                      
 	jl		delaytag
 
 	pop		dx
@@ -630,9 +692,9 @@ endsavescreen:
 	ret
 savescreen endp
 
-; prints do screen hex num in reg ax
+; prints to sreen the numbers in ax
 dispx proc near
-	push	dx					; save reg values
+	push	dx								; save reg values
 	push	cx
 	push	bx
 
@@ -642,18 +704,18 @@ dispx proc near
 dispx1:
 	xor		dx, dx
 	div		bx
-	push	dx					; save remainder
-	inc		cx					; count remainder
-	or		ax, ax				; test quotient
-	jnz		dispx1				; if not zero
+	push	dx								; save remainder
+	inc		cx								; count remainder
+	or		ax, ax							; test quotient
+	jnz		dispx1							; if not zero
 dispx2:
-	pop		dx					; display numbers
+	pop		dx								; display numbers
 	mov		ah, 6
-	add		dl, 30h				; convert to ascii
+	add		dl, 30h							; convert to ascii
 	int		21h
-	loop	dispx2				; repeat
+	loop	dispx2							; repeat
 
-	pop		bx					; restore previous reg values
+	pop		bx								; restore previous reg values
 	pop		cx
 	pop		dx
 	ret
