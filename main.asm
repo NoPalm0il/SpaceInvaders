@@ -13,7 +13,7 @@ setupscreen macro								; setup video mode
 endm
 
 normalscreen macro								; sets the normal video mode
-    xor		ah, ah
+    xor     ah, ah
     mov		al, 03h								; normal video mode (text)
     int		10h
 endm
@@ -22,7 +22,7 @@ paintscoreline macro
     mov 	cx, 240
     mov		dx, 200
 paintlineloop:
-    mov		al, 01h
+    mov		al, 111b
     mov		ah, 0ch
     int		10h
     dec		dx
@@ -52,7 +52,7 @@ data segment para 'data'
     totalp2lasers		db	0
 
     enemyship_xpos		dw	0h,0h,0h,0h,0h
-    enemyship_ypos		dw	0h,0h,0h,0h,0h
+    enemyship_ypos		dw	14h,0h,0h,10h,0bh
 
     outputfile 			db	"printscreen.ppm",0
     outhandle 			dw	?
@@ -143,7 +143,7 @@ keybdpressed:
     int		16h								; extract the keystroke from the buffer, clears zf and buffer
     call	keyboard_keys
     ret
-readchar endp    
+readchar endp
 
 keyboard_keys proc near
     cmp		al,"w"
@@ -159,11 +159,11 @@ keyboard_keys proc near
 
     cmp		al,"i"
     je		p2up							; player 2 up
-    cmp		al,"j"		
+    cmp		al,"j"
     je		p2lf							; player 2 left
-    cmp		al,"k"		
+    cmp		al,"k"
     je		p2dw							; player 2 down
-    cmp		al,"l"		
+    cmp		al,"l"
     je		p2rt							; player 2 right
     cmp		al,"n"
     je		shootp2
@@ -420,8 +420,8 @@ paintenemies proc near
 
     lea		bx, enemyship_xpos
     lea		ax, enemyship_ypos
-    mov		cx, 4
-    
+    mov		cx, 5
+
 paintblackenemyloop:						; ### PAINTS BLACK ###
     push	cx	; +1 PUSH
     mov		cx, [bx]						; load enemy x pos
@@ -446,7 +446,7 @@ paintblackenemyloop:						; ### PAINTS BLACK ###
     loop paintblackenemyloop
 
     lea		bx, enemyship_ypos
-    mov		cx, 4
+    mov		cx, 5
 enemy_discent:
     mov		ax, [bx]
     inc		ax
@@ -456,7 +456,7 @@ enemy_discent:
 
     lea		bx, enemyship_xpos
     lea		ax, enemyship_ypos
-    mov		cx, 4
+    mov		cx, 5
 paintenemyloop:								; ### PAINTS COLOR ###
     push	cx	; +1 PUSH
     mov		cx, [bx]						; load enemy x pos
@@ -822,11 +822,11 @@ delay proc near
     mov		ah, 00
     int		1Ah
     mov		bx, dx
-    
+
 delaytag:
     int		1Ah
     sub		dx, bx
-    cmp		dl, 1							; delay time                                                      
+    cmp		dl, 1							; delay time
     jl		delaytag
 
     pop		dx
