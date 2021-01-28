@@ -52,7 +52,7 @@ data segment para 'data'
     totalp2lasers		db	0
 
     enemyship_xpos		dw	0h,0h,0h,0h,0h
-    enemyship_ypos		dw	14h,0h,0h,10h,0bh
+    enemyship_ypos		dw	14h,20h,0h,10h,0bh
 
     outputfile 			db	"printscreen.ppm",0
     outhandle 			dw	?
@@ -501,7 +501,7 @@ paintyplayer:
     xor		bh, bh
 paintxplayer:
     cmp		bh, 9
-    je continueplayer
+    je      continueplayer
     push	bx
     xor		bh, bh
     int		10h
@@ -574,18 +574,91 @@ endenemyloop:
     ret
 paintenemybox endp
 
+; cx = x
+; dx = y
+paintenemyboxblack proc near
+    push	cx
+    push	dx
+    push	bx								; bx still has the index to the array
+
+    xor     al, al
+    
+    sub		cx, 3							; top left corner (cx = x)
+    sub		dx, 3							; top left corner (dx = y)
+    xor		bx, bx
+paintyenemyblack:
+    cmp		bl, 7
+    je		endenemyloopblack
+    xor		bh, bh
+paintxenemyblack:
+    cmp		bh, 7
+    je		continueenemyblack
+    ; inside "for" loop
+    push	bx	; +1 PUSH
+    xor		bh, bh
+    push	ax	; +1 PUSH
+    mov		ah, 0dh							; checks pixel color for colision
+    int		10h
+    pop		ax	; -1 POP
+    int		10h								; bh must be 0 (screen 0)
+    pop		bx	; -1 POP
+
+    inc		cx
+    inc		bh
+    jmp		paintxenemyblack
+continueenemyblack:								; 251
+    inc		bl
+    inc		dx
+    sub		cx, 7
+    jmp		paintyenemyblack
+
+endenemyloopblack:
+    pop		bx
+    pop		dx
+    pop		cx
+    ret
+paintenemyboxblack endp
+
 enemyshipcollision proc near
+    push    ax
+    push    bx
+
+    mov     cx, [bx]                        ; x position from current enemy ship
+
+    mov     ax, bx                          ; ax has x coords array pointer
+    lea     bx, enemyship_xpos              ; loads y coords array
+    sub     ax, bx                          ; gets index
+    lea     bx, enemyship_ypos
+    add     bx, ax ; ERRO!!!
+
+    mov     dx, [bx]                        ; y position
+
+    call    paintenemyboxblack
+
     mov		dx, 30
-    sub		[bx], dx
+    sub		[bx], dx                        ; bx has enemy x coords array and index position pointer
+    ; TODO: call RANDOM here...
+    
+    mov     ax, bx                          ; ax has x coords array pointer
+    lea     bx, enemyship_xpos              ; loads y coords array
+    sub     ax, bx                          ; gets index
+    lea     bx, enemyship_ypos
+    add     bx, ax
+    mov     ax, 0FFF0h
+    mov     [bx], ax
+
     inc		score
     call	paintscore
-    ; TODO: gerar uma nova coord no array
-    ;push	bx
+    
+    pop     bx
+    pop     ax
     ret
 enemyshipcollision endp
 
 
 paintscore proc near
+    push    bx
+
     mov		ah, 02h							; set cursor position service
     xor		bh, bh							; display page number
     mov		dh, 3							; row
@@ -597,6 +670,7 @@ paintscore proc near
     call	dispx
     xor		ax, ax
 
+    pop     bx
     ret
 paintscore endp
 
