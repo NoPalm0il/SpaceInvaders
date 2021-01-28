@@ -53,6 +53,7 @@ data segment para 'data'
 
     enemyship_xpos		dw	0h,0h,0h,0h,0h
     enemyship_ypos		dw	14h,20h,0h,10h,0bh
+    enemyship_index     dw  0
 
     outputfile 			db	"printscreen.ppm",0
     outhandle 			dw	?
@@ -63,6 +64,8 @@ data segment para 'data'
     isgamepaused		db	0
     isgamealive			db	1
 
+    totaltime           dw  500
+    time                db  0
 data ends
 
 code segment para 'code'
@@ -83,6 +86,16 @@ main proc far
     call	setupenemiescords				; macro for setting up enemies coords
     call	printscorestring_at_pos
     call	paintscore
+
+    ;xor     ah, ah
+    ;int     33h
+    ;cmp     ax, 0ffffh
+    ;jne     callgameloop
+    ;mov     ah, 04
+    ;mov     cx, p2xpos
+    ;mov     dx, p2ypos
+    ;int     33h
+callgameloop:
     call	gameloop						; main game loop
 
     normalscreen							; macro to setup normal text mode
@@ -92,6 +105,10 @@ main endp
 
 gameloop proc near
 
+    xor     ax, ax
+    xor     bx, bx
+    xor     cx, cx
+    xor     dx, dx
     mov		al, 01h							; player color
     call	paintplayer1
     mov		al, 02h							; player color
@@ -100,19 +117,27 @@ gameloop proc near
 
 mainloop:									; ################## MAIN LOOP ##################
 
-    call 	delay
-    call	paintenemies
-    call 	readchar
-    call	drawlasersp1
-    call	drawlasersp2
+    call 	delay                           ; delays the main loop
+    call    timeproc                        ; checks game time
+    call	paintenemies                    ; paints all the enemies
+    call 	readchar                        ; reads the keyboard buffer
+    ;call    readmouse
+    call	drawlasersp1                    ; draw the lasers from player 1
+    call	drawlasersp2                    ; draw the lasers from player 2
 
-    mov		al, isgamealive
-    cmp		al, 1
+    mov     ah, isp1alive
+    mov     al, isp2alive
+    or      al, ah                          ; or p1alive p2alive, 0 || 0 = 0 ends the game
+    cmp     al, 0
+    je      endgameloop
+    mov     al, isgamealive
+    cmp		isgamealive, 1
     je		mainloop
-
+endgameloop:
     ret
 gameloop endp
 
+; Procedure to setup "random" x coords for all the enemies
 setupenemiescords proc near
     mov		cx, 4
     lea		bx, enemyship_xpos
@@ -132,6 +157,7 @@ setupenemiescords endp
 
 ; ############################# READ CHAR #############################
 
+; Listens the keyboard, not waiting for input
 readchar proc near
     mov		ah, 01h
     int		16h
@@ -145,6 +171,21 @@ keybdpressed:
     ret
 readchar endp
 
+readmouse proc near
+
+    mov     ah, 03h
+    int     33h
+
+    mov     p2xpos, cx
+    mov     p2ypos, dx
+
+    call    removeplayer2color
+    mov     al, 010b
+    call    paintplayer2
+
+    ret
+readmouse endp
+; keys function
 keyboard_keys proc near
     cmp		al,"w"
     je		p1up							; player 1 up
@@ -188,9 +229,13 @@ p1rt:
     jmp		paintp1
 paintp1:
     mov		al, 01h							; player color
+    cmp     isp1alive, 0
+    je      exit
     call	paintplayer1
     jmp		exit
 shootp1:
+    cmp     isp1alive, 0
+    je      exit2
     call	firelaserplayer1
     jmp		exit
 saveimg:
@@ -215,16 +260,22 @@ p2rt:
     jmp		paintp2
 paintp2:
     mov		al, 02h							; player color
+    cmp     isp2alive, 0
+    je      exit2
     call 	paintplayer2
-    jmp 	exit
+    jmp 	exit2
 shootp2:
+    cmp     isp2alive, 0
+    je      exit2
     call	firelaserplayer2
-
+exit2:
     ret
 keyboard_keys endp
 
 ; ################################################################## KEYBOARD
 p1upproc proc near
+    cmp     isp1alive, 0
+    je      endp1upproc
     call	removeplayer1color
     dec		p1ypos
     dec		p1ypos
@@ -238,6 +289,8 @@ endp1upproc:
     ret
 p1upproc endp
 p1dwproc proc near
+    cmp     isp1alive, 0
+    je      endp1dwproc
     call	removeplayer1color
     inc		p1ypos
     inc		p1ypos
@@ -251,6 +304,8 @@ endp1dwproc:
     ret
 p1dwproc endp
 p1lfproc proc near
+    cmp     isp1alive, 0
+    je      endp1lfproc
     call	removeplayer1color
     dec		p1xpos
     dec		p1xpos
@@ -264,6 +319,8 @@ endp1lfproc:
     ret
 p1lfproc endp
 p1rtproc proc near
+    cmp     isp1alive, 0
+    je      endp1rtproc
     call	removeplayer1color
     inc		p1xpos
     inc		p1xpos
@@ -278,6 +335,8 @@ endp1rtproc:
 p1rtproc endp
 
 p2upproc proc near
+    cmp     isp2alive, 0
+    je      endp2upproc
     call	removeplayer2color
     dec		p2ypos
     dec		p2ypos
@@ -291,6 +350,8 @@ endp2upproc:
     ret
 p2upproc endp
 p2dwproc proc near
+    cmp     isp2alive, 0
+    je      endp2dwproc
     call	removeplayer2color
     inc		p2ypos
     inc		p2ypos
@@ -304,6 +365,8 @@ endp2dwproc:
     ret
 p2dwproc endp
 p2lfproc proc near
+    cmp     isp2alive, 0
+    je      endp2lfproc
     call	removeplayer2color
     dec		p2xpos
     dec		p2xpos
@@ -317,6 +380,8 @@ endp2lfproc:
     ret
 p2lfproc endp
 p2rtproc proc near
+    cmp     isp2alive, 0
+    je      endp2rtproc
     call	removeplayer2color
     inc		p2xpos
     inc		p2xpos
@@ -372,6 +437,7 @@ removeplayer2color endp
 
 ; ############################# PAINT PLAYER 1 PROC #############################
 
+; al = color
 paintplayer1 proc near
     push	bx
     push	cx
@@ -380,6 +446,7 @@ paintplayer1 proc near
     mov		ah, 0ch
     mov		cx, p1xpos						; horizontal pos
     mov		dx, p1ypos						; vert pos
+    mov     bl, 0                           ; 0 is p1 that is being painted
 
     call 	paintplayerbox
 
@@ -392,6 +459,7 @@ paintplayer1 endp
 
 ; ############################# PAINT PLAYER 2 PROC #############################
 
+; al = color
 paintplayer2 proc near
     push	bx
     push	cx
@@ -400,6 +468,7 @@ paintplayer2 proc near
     mov		ah, 0ch
     mov		cx, p2xpos						; horizontal pos
     mov		dx, p2ypos						; vert pos
+    mov     bl, 1                           ; 1 is p2 that is being painted
 
     call 	paintplayerbox
 
@@ -413,10 +482,10 @@ paintplayer2 endp
 ; ############################# PAINT ENEMIES #############################
 
 paintenemies proc near
-    push	ax
-    push	bx
-    push	cx
-    push	dx
+    xor     ax, ax
+    xor     bx, bx
+    xor     cx, cx
+    xor     dx, dx
 
     lea		bx, enemyship_xpos
     lea		ax, enemyship_ypos
@@ -442,6 +511,7 @@ paintblackenemyloop:						; ### PAINTS BLACK ###
     pop		ax
 
     inc		bx
+    inc     enemyship_index
     pop		cx	; -1 POP
     loop paintblackenemyloop
 
@@ -457,6 +527,7 @@ enemy_discent:
     lea		bx, enemyship_xpos
     lea		ax, enemyship_ypos
     mov		cx, 5
+    mov     enemyship_index, 0
 paintenemyloop:								; ### PAINTS COLOR ###
     push	cx	; +1 PUSH
     mov		cx, [bx]						; load enemy x pos
@@ -477,22 +548,19 @@ paintenemyloop:								; ### PAINTS COLOR ###
     pop		ax
 
     inc		bx
+    inc     enemyship_index
     pop		cx	; -1 POP
     loop	paintenemyloop
 
-    pop		dx
-    pop		cx
-    pop		bx
-    pop		ax
     ret
 paintenemies endp
 
 ; ############################# PAINT PLAYER BOX #############################
 
 paintplayerbox proc near
-    push	bx
     sub		cx, 4							; top left corner
     sub		dx, 3							; top left corner
+    push	bx
     xor		bx, bx							; 9 pixels right
 
 paintyplayer:
@@ -503,8 +571,15 @@ paintxplayer:
     cmp		bh, 9
     je      continueplayer
     push	bx
+    push    ax
+    mov     ah, 0dh
     xor		bh, bh
     int		10h
+    cmp     al, 100b
+    je      playerpixelcollision
+    pop     ax
+    xor     bh, bh
+    int     10h
     pop		bx
     inc		cx
     inc		bh
@@ -514,10 +589,64 @@ continueplayer:
     inc		dx
     sub		cx, 9
     jmp		paintyplayer
+playerpixelcollision:
+    pop     ax
+    pop     ax
+    pop     bx                              ; bl contains wich player is being painted
+    call    playercollision
+    ret
+    
 endplayerloop:
     pop		bx
     ret
 paintplayerbox endp
+
+
+playercollision proc near
+    cmp     bl, 0                           ; is p1
+    je      paintingp1
+    cmp     bl, 1
+    je      paintingp2
+paintingp1:
+    mov     isp1alive, 0
+    mov     cx, p1xpos
+    mov     dx, p1ypos
+    jmp     continuepainting
+paintingp2:
+    mov     isp2alive, 0
+    mov     cx, p2xpos
+    mov     dx, p2ypos
+
+continuepainting:
+    xor     bx, bx
+    xor     al, al
+    mov     ah, 0ch
+    sub		cx, 4							; top left corner
+    sub		dx, 3							; top left corner
+
+paintyplayerblack:
+    cmp		bl, 7
+    je		endplayerloopblack
+    xor		bh, bh
+paintxplayerblack:
+    cmp		bh, 9
+    je      continueplayerblack
+    push	bx
+    xor     bh, bh
+    int     10h
+    pop		bx
+    inc		cx
+    inc		bh
+    jmp		paintxplayerblack
+continueplayerblack:
+    inc		bl
+    inc		dx
+    sub		cx, 9
+    jmp		paintyplayerblack
+  
+endplayerloopblack:
+    ret
+playercollision endp
 
 ; al = color
 ; cx = x
@@ -565,8 +694,11 @@ pixelcollision:
     pop		ax	; -1 POP
     pop		dx	; -1 POP
     pop		bx
+    pop     dx
+    pop     cx
     push	bx								; bx stays with the array and index
     call	enemyshipcollision
+    ret
 endenemyloop:
     pop		bx
     pop		dx
@@ -623,29 +755,25 @@ enemyshipcollision proc near
     push    ax
     push    bx
 
-    mov     cx, [bx]                        ; x position from current enemy ship
+    call paintenemyboxblack
+gennewxcoord:
+    call    random
 
-    mov     ax, bx                          ; ax has x coords array pointer
-    lea     bx, enemyship_xpos              ; loads y coords array
-    sub     ax, bx                          ; gets index
+    xor     dx, dx
+    mov     cx, 190
+    mov     ax, seed
+    div     cx
+    cmp     dx, 20
+    jb      gennewxcoord
+    cmp     dx, 200
+    ja      gennewxcoord
+
+    mov     [bx], dx
+
     lea     bx, enemyship_ypos
-    add     bx, ax ; ERRO!!!
+    mov     dx, 0FFFCh
 
-    mov     dx, [bx]                        ; y position
-
-    call    paintenemyboxblack
-
-    mov		dx, 30
-    sub		[bx], dx                        ; bx has enemy x coords array and index position pointer
-    ; TODO: call RANDOM here...
-    
-    mov     ax, bx                          ; ax has x coords array pointer
-    lea     bx, enemyship_xpos              ; loads y coords array
-    sub     ax, bx                          ; gets index
-    lea     bx, enemyship_ypos
-    add     bx, ax
-    mov     ax, 0FFF0h
-    mov     [bx], ax
+    ;mov		[enemyship_index + bx], dx       ; bx has enemy x coords array and index position pointer
 
     inc		score
     call	paintscore
@@ -676,6 +804,9 @@ paintscore endp
 
 drawlasersp1 proc near
     xor		ax, ax
+    xor     bx, bx
+    xor     cx, cx
+    xor     dx, dx
     cmp		al, totalp1lasers				; al := 0
     jne		paintblacklasersp1
     ret
@@ -747,6 +878,9 @@ drawlasersp1 endp
 
 drawlasersp2 proc near
     xor		ax, ax
+    xor     bx, bx
+    xor     cx, cx
+    xor     dx, dx
     cmp		al, totalp2lasers				; al := 0
     jne		paintblacklasersp2
     ret
@@ -944,7 +1078,6 @@ dispx proc near
     push	cx
     push	bx
 
-    mov		ax, score
     xor		cx, cx
     mov		bx, 10
 dispx1:
@@ -966,6 +1099,38 @@ dispx2:
     pop		dx
     ret
 dispx endp
+
+timeproc proc near
+
+    xor     ax, ax
+    xor     bx, bx
+    xor     cx, cx
+    xor     dx, dx
+
+    cmp     totaltime, 0
+    jne     gettime
+    mov     isgamealive, 0
+gettime:
+    MOV     AH, 2ch                    ; get system time service
+    INT     21h                                       
+    CMP     dh, time
+    JE      nextsecond                ; no second passed
+    
+    dec     totaltime                 ; decrements total game secs
+
+    MOV     AH,02H
+    XOR     BX,BX
+    MOV     dh,17
+    MOV     dl,36
+    INT     10H
+
+    mov     ax, totaltime ; totaltime = 10
+    call    dispx
+
+nextsecond:
+    MOV     time, dh                         ;Coloca o segundo atual , na variável timeee
+    RET
+timeproc endp
 
 code ends
 end
